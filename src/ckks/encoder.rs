@@ -2,7 +2,6 @@ use na::DMatrix;
 use num_complex::Complex64;
 use rustnomial::{Evaluable, Polynomial};
 use std::convert::TryInto;
-use std::str::FromStr;
 
 // Basic CKKS encoder to encode complex vectors into polynomials.
 pub struct Encoder {
@@ -15,7 +14,7 @@ impl Encoder {
     // Initialization of the encoder for M, a power of 2.
     //
     // xi, which is an m-th root of unity will, be used as a basis for our computations
-    fn new(m: usize) -> Self {
+    pub fn new(m: usize) -> Self {
         // xi = e^(2 * pi * i / m)
         let xi = (2.0 * std::f64::consts::PI * Complex64::new(0.0, 1.0) / (m as f64)).exp();
         Self { xi, m, n: m / 2 }
@@ -71,7 +70,7 @@ impl Encoder {
     }
 
     // Converts a matrix into a polynomial
-    fn to_polynomial(&self, x_coeffs: &DMatrix<Complex64>) -> Polynomial<Complex64> {
+    pub fn to_polynomial(&self, x_coeffs: &DMatrix<Complex64>) -> Polynomial<Complex64> {
         // TODO: Figure out a way to collect these elements idomatically
         // calling .collect() refuses to work.
         let mut poly_vec: Vec<Complex64> = Vec::with_capacity(self.n);
@@ -86,7 +85,7 @@ impl Encoder {
         poly
     }
     // Converts a polynomial into a matrix
-    fn from_polynomial(&self, poly: &Polynomial<Complex64>) -> DMatrix<Complex64> {
+    pub fn from_polynomial(&self, poly: &Polynomial<Complex64>) -> DMatrix<Complex64> {
         let mut matrix: Vec<Complex64> = Vec::with_capacity(self.n);
         for coeff in poly.terms.iter() {
             matrix.push(coeff.clone());
