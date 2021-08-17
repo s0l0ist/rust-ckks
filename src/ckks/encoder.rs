@@ -1,8 +1,8 @@
+use crate::na::ComplexField;
 use na::DMatrix;
 use num_complex::Complex64;
 use rustnomial::{Evaluable, Polynomial};
 use std::convert::TryInto;
-
 // Basic CKKS encoder to encode complex vectors into polynomials.
 pub struct Encoder {
     pub xi: Complex64,
@@ -18,6 +18,30 @@ impl Encoder {
         // xi = e^(2 * pi * i / m)
         let xi = (2.0 * std::f64::consts::PI * Complex64::new(0.0, 1.0) / (m as f64)).exp();
         Self { xi, m, n: m / 2 }
+    }
+
+    // Projects a vector of H into C^{N/2}.
+    pub fn pi(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
+        let mut z_slice: Vec<Complex64> = Vec::with_capacity(self.n);
+        for coeff in z.iter() {
+            z_slice.push(coeff.clone());
+        }
+        let n = self.m / 4;
+        let dmatrix = DMatrix::from_row_slice(n, 1, &z_slice[..n]);
+        dmatrix
+    }
+
+    // Expands a vector of C^{N/2} by expanding it with its complex conjugate.
+    pub fn pi_inverse(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
+        let mut z_concat: Vec<Complex64> = Vec::with_capacity(self.n * 2);
+        let mut z_conjugate: Vec<Complex64> = Vec::with_capacity(self.n);
+        for coeff in z.iter() {
+            z_concat.push(coeff.clone());
+            z_conjugate.push(coeff.conjugate());
+        }
+        z_concat.append(&mut z_conjugate);
+        let dmatrix = DMatrix::from_row_slice(self.n * 2, 1, &z_concat);
+        dmatrix
     }
 
     // Computes the Vandermonde matrix from a m-th root of unity.
@@ -43,6 +67,7 @@ impl Encoder {
         let dmatrix = DMatrix::from_row_slice(self.n, self.n, &matrix);
         dmatrix
     }
+
     // Encodes a vector, b, in a polynomial using an m-th root of unity (sigma-inverse)
     pub fn encode(&self, b: &DMatrix<Complex64>) -> Polynomial<Complex64> {
         // First we create the Vandermonde matrix
@@ -52,6 +77,7 @@ impl Encoder {
         let x_coeffs = decomp.solve(b).expect("Linear resolution failed.");
         Encoder::to_polynomial(&self, &x_coeffs)
     }
+
     // Decodes a polynomial by applying it to the M-th roots of unity. (sigma)
     pub fn decode(&self, poly: &Polynomial<Complex64>) -> DMatrix<Complex64> {
         // We simply apply the polynomial on the roots
@@ -84,6 +110,7 @@ impl Encoder {
         let poly = Polynomial::new(poly_vec);
         poly
     }
+
     // Converts a polynomial into a matrix
     pub fn from_polynomial(&self, poly: &Polynomial<Complex64>) -> DMatrix<Complex64> {
         let mut matrix: Vec<Complex64> = Vec::with_capacity(self.n);
@@ -109,7 +136,7 @@ mod complex {
     const NUM_ROWS: usize = 4;
     const NUM_COLS: usize = 1;
     #[test]
-    pub fn test_xi() {
+    fn test_xi() {
         let encoder = Encoder::new(8);
         assert_eq!(
             encoder.xi,
@@ -118,7 +145,58 @@ mod complex {
     }
 
     #[test]
-    pub fn to_from_polynomial() {
+    fn pi() {
+        let plain = DMatrix::from_vec(
+            NUM_ROWS,
+            NUM_COLS,
+            vec![
+                Complex64::new(1.0, 0.0),
+                Complex64::new(2.0, -1.0),
+                Complex64::new(3.0, -5.0),
+                Complex64::new(4.0, 0.0),
+            ],
+        );
+        let expected = DMatrix::from_vec(
+            NUM_ROWS / 2,
+            NUM_COLS,
+            vec![Complex64::new(1.0, 0.0), Complex64::new(2.0, -1.0)],
+        );
+        let encoder = Encoder::new(NUM_ELEMENTS);
+        let pi = encoder.pi(&plain);
+        assert_eq!(pi, expected);
+    }
+    #[test]
+    fn pi_inverse() {
+        let plain = DMatrix::from_vec(
+            NUM_ROWS,
+            NUM_COLS,
+            vec![
+                Complex64::new(1.0, 0.0),
+                Complex64::new(2.0, -1.0),
+                Complex64::new(3.0, -5.0),
+                Complex64::new(4.0, 0.0),
+            ],
+        );
+        let expected = DMatrix::from_vec(
+            NUM_ROWS * 2,
+            NUM_COLS,
+            vec![
+                Complex64::new(1.0, 0.0),
+                Complex64::new(2.0, -1.0),
+                Complex64::new(3.0, -5.0),
+                Complex64::new(4.0, 0.0),
+                Complex64::new(1.0, -0.0),
+                Complex64::new(2.0, 1.0),
+                Complex64::new(3.0, 5.0),
+                Complex64::new(4.0, -0.0),
+            ],
+        );
+        let encoder = Encoder::new(NUM_ELEMENTS);
+        let conjugate = encoder.pi_inverse(&plain);
+        assert_eq!(conjugate, expected);
+    }
+    #[test]
+    fn to_from_polynomial() {
         let plain = DMatrix::from_vec(
             NUM_ROWS,
             NUM_COLS,
@@ -136,7 +214,7 @@ mod complex {
     }
 
     #[test]
-    pub fn encode() {
+    fn encode() {
         // a matrix with dimensions 1 cols × 4 rows.
         let plain = DMatrix::from_vec(
             NUM_ROWS,
@@ -167,7 +245,7 @@ mod complex {
     }
 
     #[test]
-    pub fn decode() {
+    fn decode() {
         let original_matrix = DMatrix::from_vec(
             NUM_ROWS,
             NUM_COLS,
