@@ -98,8 +98,6 @@ impl Encoder {
             matrix.push(*coeff);
         }
 
-        println!("from_poly matrix {:#?}", matrix);
-
         // Reverse the vec because Polynomial library constructs
         // a polynomial with the highest power to lowest power ex: 3x^3 + 2x^2 + x + 8
         // and we need it in the form of 8 + x + 2x^2 + 3x^3
@@ -113,6 +111,9 @@ impl Encoder {
 #[cfg(test)]
 mod complex {
     use super::*;
+    const NUM_ELEMENTS: usize = 8;
+    const NUM_ROWS: usize = 4;
+    const NUM_COLS: usize = 1;
     #[test]
     pub fn test_xi() {
         let encoder = Encoder::new(8);
@@ -123,13 +124,9 @@ mod complex {
     }
 
     #[test]
-    pub fn test_sigma_inverse() {
-        const NUM_ELEMENTS: usize = 8;
-        const NUM_ROWS: usize = 4;
-        const NUM_COLS: usize = 1;
-
+    pub fn encode() {
         // a matrix with dimensions 1 cols × 4 rows.
-        let b = DMatrix::from_vec(
+        let plain = DMatrix::from_vec(
             NUM_ROWS,
             NUM_COLS,
             vec![
@@ -140,7 +137,7 @@ mod complex {
             ],
         );
 
-        let expected = DMatrix::from_vec(
+        let encoded_expected = DMatrix::from_vec(
             NUM_ROWS,
             NUM_COLS,
             vec![
@@ -152,18 +149,14 @@ mod complex {
         );
 
         let encoder = Encoder::new(NUM_ELEMENTS);
-        let p = encoder.encode(&b);
-        let p_matrix = encoder.from_polynomial(&p);
-        assert_eq!(p_matrix, expected);
+        let encoded = encoder.encode(&plain);
+        let encoded_matrix = encoder.from_polynomial(&encoded);
+        assert_eq!(encoded_matrix, encoded_expected);
     }
 
     #[test]
-    pub fn test_sigma() {
-        const NUM_ELEMENTS: usize = 8;
-        const NUM_ROWS: usize = 4;
-        const NUM_COLS: usize = 1;
-
-        let original = DMatrix::from_vec(
+    pub fn decode() {
+        let original_matrix = DMatrix::from_vec(
             NUM_ROWS,
             NUM_COLS,
             vec![
@@ -173,7 +166,7 @@ mod complex {
                 Complex64::new(4.0, 0.0),
             ],
         );
-        let sigma_inverse = DMatrix::from_vec(
+        let encoded_matrix = DMatrix::from_vec(
             NUM_ROWS,
             NUM_COLS,
             vec![
@@ -184,7 +177,7 @@ mod complex {
             ],
         );
 
-        let b_expected = DMatrix::from_vec(
+        let encoded_expected = DMatrix::from_vec(
             NUM_ROWS,
             NUM_COLS,
             vec![
@@ -196,11 +189,10 @@ mod complex {
         );
 
         let encoder = Encoder::new(NUM_ELEMENTS);
-        let sig_poly = encoder.to_polynomial(&sigma_inverse);
-        let b_reconstructed = encoder.decode(&sig_poly);
-        println!("b_reconstructed {}", b_reconstructed);
-        assert_eq!(b_reconstructed, b_expected);
-        let diff = b_reconstructed.clone() - original.clone();
+        let encoded_poly = encoder.to_polynomial(&encoded_matrix);
+        let decoded_matrix = encoder.decode(&encoded_poly);
+        assert_eq!(decoded_matrix, encoded_expected);
+        let diff = decoded_matrix.clone() - original_matrix.clone();
         let normalized = diff.dot(&diff).sqrt();
         assert_eq!(
             normalized,
@@ -210,10 +202,6 @@ mod complex {
 
     #[test]
     fn add_two() {
-        const NUM_ELEMENTS: usize = 8;
-        const NUM_ROWS: usize = 4;
-        const NUM_COLS: usize = 1;
-
         let m1 = DMatrix::from_vec(
             NUM_ROWS,
             NUM_COLS,
@@ -260,10 +248,6 @@ mod complex {
 
     #[test]
     fn multiply() {
-        const NUM_ELEMENTS: usize = 8;
-        const NUM_ROWS: usize = 4;
-        const NUM_COLS: usize = 1;
-
         let m1 = DMatrix::from_vec(
             NUM_ROWS,
             NUM_COLS,
