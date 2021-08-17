@@ -7,6 +7,7 @@ use std::convert::TryInto;
 pub struct Encoder {
     pub xi: Complex64,
     pub m: usize,
+    pub n: usize,
 }
 
 impl Encoder {
@@ -16,24 +17,21 @@ impl Encoder {
     fn new(m: usize) -> Self {
         // xi = e^(2 * pi * i / m)
         let xi = (2.0 * std::f64::consts::PI * Complex64::new(0.0, 1.0) / (m as f64)).exp();
-        Self { xi, m }
+        Self { xi, m, n: m / 2 }
     }
 
     // Computes the Vandermonde matrix from a m-th root of unity.
-    pub fn vandermonde(xi: Complex64, m: usize) -> DMatrix<Complex64> {
-        // Floor division
-        let n = m / 2;
-
+    pub fn vandermonde(&self) -> DMatrix<Complex64> {
         // We will generate a flat Vector containing all elements for
         // a matrix
-        let mut matrix: Vec<Complex64> = Vec::with_capacity(n);
-        for i in 0..n {
+        let mut matrix: Vec<Complex64> = Vec::with_capacity(self.n);
+        for i in 0..self.n {
             let i: u32 = i.try_into().expect("Couldn't convert usize to u32");
             // For each row we select a different root
-            let root: Complex64 = xi.powu((2 * i) + 1);
+            let root: Complex64 = self.xi.powu((2 * i) + 1);
 
             // Then we store its powers
-            for j in 0..n {
+            for j in 0..self.n {
                 let j: u32 = j.try_into().expect("Couldn't convert usize to u32");
                 let ans = root.powu(j);
 
@@ -42,13 +40,13 @@ impl Encoder {
             }
         }
         // Create dynamic matrix from our native matrix (row-major order)
-        let dmatrix = DMatrix::from_row_slice(n, n, &matrix);
+        let dmatrix = DMatrix::from_row_slice(self.n, self.n, &matrix);
         dmatrix
     }
     // Encodes a vector, b, in a polynomial using an m-th root of unity (sigma-inverse)
     pub fn encode(&self, b: &DMatrix<Complex64>) -> Polynomial<Complex64> {
         // First we create the Vandermonde matrix
-        let a = Encoder::vandermonde(self.xi, self.m);
+        let a = Encoder::vandermonde(&self);
         // Then we solve the system and return the resultant matrix
         let decomp = a.lu();
         let x_coeffs = decomp.solve(b).expect("Linear resolution failed.");
@@ -56,11 +54,9 @@ impl Encoder {
     }
     // Decodes a polynomial by applying it to the M-th roots of unity. (sigma)
     pub fn decode(&self, poly: &Polynomial<Complex64>) -> DMatrix<Complex64> {
-        let n = self.m / 2;
-
         // We simply apply the polynomial on the roots
-        let mut matrix: Vec<Complex64> = Vec::with_capacity(n);
-        for i in 0..n {
+        let mut matrix: Vec<Complex64> = Vec::with_capacity(self.n);
+        for i in 0..self.n {
             let i: u32 = i.try_into().expect("Couldn't convert usize to u32");
             let root: Complex64 = self.xi.powu((2 * i) + 1);
             // Evaluate polynomial with the given root
@@ -69,17 +65,15 @@ impl Encoder {
         }
 
         // We will always return n cols x 1 row matrix;
-        let dmatrix = DMatrix::from_row_slice(n, 1, &matrix);
+        let dmatrix = DMatrix::from_row_slice(self.n, 1, &matrix);
         dmatrix
     }
 
     // Converts a matrix into a polynomial
     fn to_polynomial(&self, x_coeffs: &DMatrix<Complex64>) -> Polynomial<Complex64> {
-        let n = self.m / 2;
-
         // TODO: Figure out a way to collect these elements idomatically
         // calling .collect() refuses to work.
-        let mut poly_vec: Vec<Complex64> = Vec::with_capacity(n);
+        let mut poly_vec: Vec<Complex64> = Vec::with_capacity(self.n);
         for coeff in x_coeffs.iter() {
             poly_vec.push(*coeff);
         }
@@ -92,8 +86,7 @@ impl Encoder {
     }
     // Converts a polynomial into a matrix
     fn from_polynomial(&self, poly: &Polynomial<Complex64>) -> DMatrix<Complex64> {
-        let n = self.m / 2;
-        let mut matrix: Vec<Complex64> = Vec::with_capacity(n);
+        let mut matrix: Vec<Complex64> = Vec::with_capacity(self.n);
         for coeff in poly.terms.iter() {
             matrix.push(*coeff);
         }
@@ -103,7 +96,7 @@ impl Encoder {
         // and we need it in the form of 8 + x + 2x^2 + 3x^3
         matrix.reverse();
 
-        let dmatrix = DMatrix::from_row_slice(n, 1, &matrix);
+        let dmatrix = DMatrix::from_row_slice(self.n, 1, &matrix);
         dmatrix
     }
 }
