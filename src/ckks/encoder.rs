@@ -2,6 +2,7 @@ use na::DMatrix;
 use num_complex::Complex64;
 use rustnomial::{Evaluable, Polynomial};
 use std::convert::TryInto;
+use std::str::FromStr;
 
 // Basic CKKS encoder to encode complex vectors into polynomials.
 pub struct Encoder {
@@ -75,9 +76,9 @@ impl Encoder {
         // calling .collect() refuses to work.
         let mut poly_vec: Vec<Complex64> = Vec::with_capacity(self.n);
         for coeff in x_coeffs.iter() {
-            poly_vec.push(*coeff);
+            poly_vec.push(coeff.clone());
         }
-        // Reverse the vec because Polynomial library constructs
+        // Reverse the vec because the 'polynomials' library constructs
         // a polynomial with the highest power to lowest power ex: 3x^3 + 2x^2 + x + 8
         // and we need it in the form of 8 + x + 2x^2 + 3x^3
         poly_vec.reverse();
@@ -88,10 +89,10 @@ impl Encoder {
     fn from_polynomial(&self, poly: &Polynomial<Complex64>) -> DMatrix<Complex64> {
         let mut matrix: Vec<Complex64> = Vec::with_capacity(self.n);
         for coeff in poly.terms.iter() {
-            matrix.push(*coeff);
+            matrix.push(coeff.clone());
         }
 
-        // Reverse the vec because Polynomial library constructs
+        // Reverse the vec because the 'polynomials' library constructs
         // a polynomial with the highest power to lowest power ex: 3x^3 + 2x^2 + x + 8
         // and we need it in the form of 8 + x + 2x^2 + 3x^3
         matrix.reverse();
@@ -104,6 +105,7 @@ impl Encoder {
 #[cfg(test)]
 mod complex {
     use super::*;
+
     const NUM_ELEMENTS: usize = 8;
     const NUM_ROWS: usize = 4;
     const NUM_COLS: usize = 1;
@@ -114,6 +116,24 @@ mod complex {
             encoder.xi,
             Complex64::new(0.7071067811865476, 0.7071067811865475)
         );
+    }
+
+    #[test]
+    pub fn to_from_polynomial() {
+        let plain = DMatrix::from_vec(
+            NUM_ROWS,
+            NUM_COLS,
+            vec![
+                Complex64::new(1.0, 0.0),
+                Complex64::new(2.0, 0.0),
+                Complex64::new(3.0, 0.0),
+                Complex64::new(4.0, 0.0),
+            ],
+        );
+        let encoder = Encoder::new(NUM_ELEMENTS);
+        let poly = encoder.to_polynomial(&plain);
+        let plain_expected = encoder.from_polynomial(&poly);
+        assert_eq!(plain, plain_expected);
     }
 
     #[test]
