@@ -1,0 +1,30 @@
+[package]
+name = "ckks"
+version = "0.1.0"
+authors = ["Nick Angelou <nick@morfix.io>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "ckks"
+path = "src/lib.rs"
+crate-type = ["lib"]
+
+[dependencies]
+# nalgebra - used for linear algebra (matrix computation)
+nalgebra = "0.29"
+# num-bigint - used to easily multiply big numbers
+num-bigint = { version = "0.4", features = ["serde"] }
+# num-traits - used to generate bignums
+num-traits = "0.2"
+# num-complex - used for complex numbers
+num-complex = "0.4"
+# num-integer - used to restrict generics
+num-integer = "0.1"
+# ark-poly - used to convert vectors into polynomials and evaluate them
+ark-poly = "0.3"
+rustnomial = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
