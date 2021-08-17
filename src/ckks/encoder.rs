@@ -56,10 +56,13 @@ impl Encoder {
 
     // Creates the basis (sigma(1), sigma(X), ..., sigma(X** N-1)).
     pub fn create_sigma_r_basis(xi: Complex64, n: usize) -> DMatrix<Complex64> {
-        // TODO: transpose the matrix
         Encoder::vandermonde(xi, n).transpose()
     }
 
+    // TODO: Computes the coordinates of a vector with respect to the orthogonal lattice basis.
+    // pub fn compute_basis_coordinates(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
+    //     // output = np.array([np.real(np.vdot(z, b) / np.vdot(b,b)) for b in self.sigma_R_basis])
+    // }
     // Computes the Vandermonde matrix from a m-th root of unity.
     pub fn vandermonde(xi: Complex64, n: usize) -> DMatrix<Complex64> {
         // We will generate a flat Vector containing all elements for
@@ -469,4 +472,36 @@ mod complex {
         let decoded = encoder.decode(&p_mod);
         assert_eq!(decoded, expected);
     }
+
+    // #[test]
+    // fn multiply_integer_polynomials() {
+    //     let m1 = DMatrix::from_vec(
+    //         NUM_ROWS,
+    //         NUM_COLS,
+    //         vec![
+    //             Complex64::new(1.0, 0.0),
+    //             Complex64::new(2.0, 0.0),
+    //             Complex64::new(3.0, 0.0),
+    //             Complex64::new(4.0, 0.0),
+    //         ],
+    //     );
+    //     let coordinates = DMatrix::from_vec(
+    //         NUM_ROWS,
+    //         NUM_COLS,
+    //         vec![
+    //             Complex64::new(1.0, 0.0),
+    //             Complex64::new(1.0, 0.0),
+    //             Complex64::new(1.0, 0.0),
+    //             Complex64::new(1.0, 0.0),
+    //         ],
+    //     );
+
+    //     let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
+
+    //     let sigma = encoder.sigma_r_basis.transpose();
+    //     let product = sigma * coordinates;
+    //     println!("encoder.encode(&product) {:#?}", encoder.encode(&product));
+    //     println!("product {}", product);
+    //     assert_eq!(true, false);
+    // }
 }
