@@ -59,10 +59,27 @@ impl Encoder {
         Encoder::vandermonde(xi, n).transpose()
     }
 
-    // TODO: Computes the coordinates of a vector with respect to the orthogonal lattice basis.
-    // pub fn compute_basis_coordinates(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-    //     // output = np.array([np.real(np.vdot(z, b) / np.vdot(b,b)) for b in self.sigma_R_basis])
+    // Computes the coordinates of a vector with respect to the orthogonal lattice basis.
+    pub fn compute_basis_coordinates(&self, z: &DMatrix<Complex64>) -> DMatrix<f64> {
+        // output = np.array([np.real(np.vdot(z, b) / np.vdot(b,b)) for b in self.sigma_R_basis])
+        let mut output: Vec<f64> = vec![];
+
+        for b in self.sigma_r_basis.row_iter() {
+            let ans = z.conjugate().dot(&b) / b.conjugate().dot(&b);
+            let real = ans.real();
+            output.push(real);
+        }
+
+        let dmatrix = DMatrix::from_row_slice(1, output.len(), &output);
+        dmatrix
+    }
+
+    // TODO: Gives the integral rest.
+    // pub fn round_coordinates(coordinates: &DMatrix<f64>) -> DMatrix<f64> {
+    //     coordinates = coordinates - coordinates.
+    //     coordinates
     // }
+
     // Computes the Vandermonde matrix from a m-th root of unity.
     pub fn vandermonde(xi: Complex64, n: usize) -> DMatrix<Complex64> {
         // We will generate a flat Vector containing all elements for
@@ -87,19 +104,42 @@ impl Encoder {
         dmatrix
     }
 
-    // Encodes a vector, b, in a polynomial using an m-th root of unity (sigma-inverse)
-    pub fn encode(&self, b: &DMatrix<Complex64>) -> Polynomial<Complex64> {
+    // TODO: Encodes a vector by expanding it first to H,
+    // scale it, project it on the lattice of sigma(R), and performs
+    // sigma inverse.
+    // pub fn encode(&self, z: &DMatrix<Complex64>) -> Polynomial<Complex64> {
+    //     let pi_z = self.pi_inverse(z);
+    //     let scaled_pi_z = self.scale * pi_z;
+    //     let rounded_scale_pi_z = self.sigma_r_discretization(scaled_pi_z);
+    //     let p = self.sigma_inverse(rounded_scale_pi_z);
+
+    //     // We round it afterwards due to numerical imprecision
+    //     let coeff = p.coeff.real() as i64; // auto rounds
+    //     let poly = self.to_polynomial(coeff);
+    //     poly
+    // }
+
+    // // TODO: Decodes a polynomial by removing the scale,
+    // // evaluating on the roots, and project it on C^(N/2)
+    // pub fn decode(&self, p: &Polynomial<Complex64>) -> DMatrix<Complex64> {
+    //     let rescaled_p = p / self.scale;
+    //     let z = self.sigma(rescaled_p);
+    //     let pi_z = self.pi(&z);
+    //     pi_z
+    // }
+
+    // sigma-inverse is a vector, b, in a polynomial using an m-th root of unity
+    pub fn sigma_inverse(&self, b: &DMatrix<Complex64>) -> Polynomial<Complex64> {
         // First we create the Vandermonde matrix
         let a = Encoder::vandermonde(self.xi, self.n);
-        println!("vandermonde {}", a);
         // Then we solve the system and return the resultant matrix
         let decomp = a.lu();
         let x_coeffs = decomp.solve(b).expect("Linear resolution failed.");
         Encoder::to_polynomial(&self, &x_coeffs)
     }
 
-    // Decodes a polynomial by applying it to the M-th roots of unity. (sigma)
-    pub fn decode(&self, poly: &Polynomial<Complex64>) -> DMatrix<Complex64> {
+    // sigma a polynomial by applying it to the M-th roots of unity.
+    pub fn sigma(&self, poly: &Polynomial<Complex64>) -> DMatrix<Complex64> {
         // We simply apply the polynomial on the roots
         let mut matrix: Vec<Complex64> = Vec::with_capacity(self.n);
         for i in 0..self.n {
@@ -153,7 +193,7 @@ mod complex {
     use super::*;
 
     const NUM_ELEMENTS: usize = 8;
-    const NUM_ROWS: usize = 4;
+    const NUM_ROWS: usize = NUM_ELEMENTS / 2;
     const NUM_COLS: usize = 1;
     const SCALE: f64 = 20.0;
     #[test]
@@ -281,6 +321,34 @@ mod complex {
 
         assert_eq!(sigma_r, sigma_r_expected);
     }
+
+    #[test]
+    fn compute_basis_coordinates() {
+        let vect = DMatrix::from_vec(
+            NUM_COLS,
+            NUM_ROWS,
+            vec![
+                Complex64::new(192.0, 256.0),
+                Complex64::new(128.0, -64.0),
+                Complex64::new(128.0, 64.0),
+                Complex64::new(192.0, -256.0),
+            ],
+        );
+        let basis_expected: DMatrix<f64> = DMatrix::from_vec(
+            NUM_COLS,
+            NUM_ROWS,
+            vec![
+                160.0,
+                90.5096679918781,
+                159.99999999999997,
+                45.25483399593886,
+            ],
+        );
+        let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
+        let basis = encoder.compute_basis_coordinates(&vect);
+        assert_eq!(basis, basis_expected);
+    }
+
     #[test]
     fn to_from_polynomial() {
         let plain = DMatrix::from_vec(
@@ -325,8 +393,8 @@ mod complex {
         );
 
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
-        let encoded = encoder.encode(&plain);
-        let encoded_matrix = encoder.from_polynomial(&encoded);
+        let sigma_inv = encoder.sigma_inverse(&plain);
+        let encoded_matrix = encoder.from_polynomial(&sigma_inv);
         assert_eq!(encoded_matrix, encoded_expected);
     }
 
@@ -366,9 +434,9 @@ mod complex {
 
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
         let encoded_poly = encoder.to_polynomial(&encoded_matrix);
-        let decoded_matrix = encoder.decode(&encoded_poly);
-        assert_eq!(decoded_matrix, encoded_expected);
-        let diff = decoded_matrix.clone() - original_matrix.clone();
+        let sigma = encoder.sigma(&encoded_poly);
+        assert_eq!(sigma, encoded_expected);
+        let diff = sigma.clone() - original_matrix.clone();
         let normalized = diff.dot(&diff).sqrt();
         assert_eq!(
             normalized,
@@ -414,11 +482,11 @@ mod complex {
         );
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
 
-        let p1 = encoder.encode(&m1);
-        let p2 = encoder.encode(&m2);
+        let p1 = encoder.sigma_inverse(&m1);
+        let p2 = encoder.sigma_inverse(&m2);
         let p_add = p1 + p2;
 
-        let add_decoded = encoder.decode(&p_add);
+        let add_decoded = encoder.sigma(&p_add);
         assert_eq!(add_decoded, add_expected);
     }
 
@@ -457,8 +525,8 @@ mod complex {
 
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
 
-        let p1 = encoder.encode(&m1);
-        let p2 = encoder.encode(&m2);
+        let p1 = encoder.sigma_inverse(&m1);
+        let p2 = encoder.sigma_inverse(&m2);
         let plain_modulus = Polynomial::from(vec![
             Complex64::new(1.0, 0.0),
             Complex64::new(0.0, 0.0),
@@ -469,8 +537,8 @@ mod complex {
 
         let p_product = p1 * p2;
         let (_, p_mod) = p_product.div_mod(&plain_modulus);
-        let decoded = encoder.decode(&p_mod);
-        assert_eq!(decoded, expected);
+        let sigma = encoder.sigma(&p_mod);
+        assert_eq!(sigma, expected);
     }
 
     // #[test]
