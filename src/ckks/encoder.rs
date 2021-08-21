@@ -1,8 +1,11 @@
+use crate::ckks::random::UniformRandomGenerator;
 use crate::na::ComplexField;
 use na::DMatrix;
 use num_complex::Complex64;
 use rustnomial::{Evaluable, Polynomial};
+use std::cell::RefCell;
 use std::convert::TryInto;
+
 // Basic CKKS encoder to encode complex vectors into polynomials.
 pub struct Encoder {
     pub xi: Complex64,
@@ -10,6 +13,7 @@ pub struct Encoder {
     pub n: usize,
     pub sigma_r_basis: DMatrix<Complex64>,
     pub scale: f64,
+    pub rng: RefCell<UniformRandomGenerator>,
 }
 
 impl Encoder {
@@ -21,12 +25,17 @@ impl Encoder {
         let xi = (2.0 * std::f64::consts::PI * Complex64::new(0.0, 1.0) / (m as f64)).exp();
         let n = m / 2;
         let sigma_r_basis = Encoder::create_sigma_r_basis(xi, n);
+
+        // also hold a ref to a mutable RNG
+        let rng = RefCell::new(UniformRandomGenerator::new());
+
         Self {
             xi,
             m,
             n,
             sigma_r_basis,
             scale,
+            rng,
         }
     }
 
@@ -88,9 +97,22 @@ impl Encoder {
         dmatrix
     }
 
-    // TODO: Rounds coordinates randonmly.
-    pub fn coordinate_wise_random_rounding(&self, _coordinates: &DMatrix<f64>) -> DMatrix<f64> {
-        todo!()
+    // Rounds coordinates randonmly.
+    pub fn coordinate_wise_random_rounding(&self, coordinates: &DMatrix<f64>) -> DMatrix<i64> {
+        let mut output: Vec<f64> = vec![];
+        let r = self.round_coordinates(coordinates);
+        let mut rng_ref = self.rng.borrow_mut();
+        for &c in r.iter() {
+            let choices = vec![c, c - 1.0];
+            let wieghts = vec![1.0 - c, c];
+            let sample = rng_ref.weighted_choice(&choices, &wieghts);
+            output.push(sample);
+        }
+
+        let dmatrix = DMatrix::from_row_slice(1, output.len(), &output);
+        let rounded_coordinates = coordinates - dmatrix;
+        let new_rounded_coordinates = rounded_coordinates.map(|x| x as i64);
+        new_rounded_coordinates
     }
 
     // Computes the Vandermonde matrix from a m-th root of unity.
@@ -387,6 +409,28 @@ mod complex {
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
         let rounded = encoder.round_coordinates(&coordinates);
         assert_eq!(rounded, rounded_expected);
+    }
+
+    #[test]
+    fn coordinate_wise_random_rounding() {
+        let coordinates: DMatrix<f64> = DMatrix::from_vec(
+            NUM_COLS,
+            NUM_ROWS,
+            vec![
+                160.0,
+                90.5096679918781,
+                159.99999999999997,
+                45.25483399593886,
+            ],
+        );
+        let rounded_coordinates_expected: DMatrix<i64> =
+            DMatrix::from_vec(NUM_COLS, NUM_ROWS, vec![160, 90, 160, 45]);
+        let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
+        let rounded_coordinates = encoder.coordinate_wise_random_rounding(&coordinates);
+        assert_eq!(
+            rounded_coordinates.len(),
+            rounded_coordinates_expected.len()
+        );
     }
 
     #[test]

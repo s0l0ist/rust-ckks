@@ -24,6 +24,8 @@ num-integer = "0.1"
 # ark-poly - used to convert vectors into polynomials and evaluate them
 ark-poly = "0.3"
 rustnomial = "0.3"
+# rand - used to sample random values
+rand = "0.8"
 
 [profile.release]
 opt-level = 3
