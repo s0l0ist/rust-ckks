@@ -77,7 +77,7 @@ impl Encoder {
         dmatrix
     }
 
-    // TODO: Gives the integral rest.
+    // Gives the integral rest.
     pub fn round_coordinates(&self, coordinates: &DMatrix<f64>) -> DMatrix<f64> {
         let mut output: Vec<f64> = vec![];
         for coeff in coordinates.iter() {
@@ -86,6 +86,11 @@ impl Encoder {
         }
         let dmatrix = DMatrix::from_row_slice(1, output.len(), &output);
         dmatrix
+    }
+
+    // TODO: Rounds coordinates randonmly.
+    pub fn coordinate_wise_random_rounding(&self, _coordinates: &DMatrix<f64>) -> DMatrix<f64> {
+        todo!()
     }
 
     // Computes the Vandermonde matrix from a m-th root of unity.
