@@ -51,17 +51,19 @@ impl Encoder {
 
     // Expands a vector of C^{N/2} by expanding it with its complex conjugate.
     pub fn pi_inverse(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        let mut z_concat: Vec<Complex64> = Vec::with_capacity(self.n * 2);
+        // let mut z_concat: Vec<Complex64> = Vec::with_capacity(self.n * 2);
+        let mut z_concat: Vec<Complex64> = vec![];
 
         // TODO: Simplify the concatenation
         // let z_conjugate = z.conjugate();
-        let mut z_conjugate: Vec<Complex64> = Vec::with_capacity(self.n);
+        // let mut z_conjugate: Vec<Complex64> = Vec::with_capacity(self.n);
+        let mut z_conjugate: Vec<Complex64> = vec![];
         for coeff in z.iter() {
             z_concat.push(coeff.clone());
             z_conjugate.push(coeff.conjugate());
         }
         z_concat.append(&mut z_conjugate);
-        DMatrix::from_row_slice(self.n * 2, 1, &z_concat)
+        DMatrix::from_row_slice(z_concat.len(), 1, &z_concat)
     }
 
     // Creates the basis (sigma(1), sigma(X), ..., sigma(X** N-1)).
@@ -73,9 +75,9 @@ impl Encoder {
     pub fn compute_basis_coordinates(&self, z: &DMatrix<Complex64>) -> DMatrix<f64> {
         // output = np.array([np.real(np.vdot(z, b) / np.vdot(b,b)) for b in self.sigma_R_basis])
         let mut output: Vec<f64> = vec![];
-
+        let z_conj = z.conjugate();
         for b in self.sigma_r_basis.row_iter() {
-            let ans = z.conjugate().dot(&b) / b.conjugate().dot(&b);
+            let ans = z_conj.dot(&b) / b.conjugate().dot(&b);
             let real = ans.real();
             output.push(real);
         }
@@ -148,7 +150,7 @@ impl Encoder {
     // sigma inverse.
     pub fn encode(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
         let pi_z = self.pi_inverse(z);
-        let scaled_pi_z = pi_z.scale(self.scale);
+        let scaled_pi_z = pi_z.scale(self.scale).transpose();
         let rounded_scale_pi_z = self.sigma_r_discretization(&scaled_pi_z);
         let p = self.sigma_inverse(&rounded_scale_pi_z);
 
@@ -162,7 +164,7 @@ impl Encoder {
     // Decodes a polynomial by removing the scale,
     // evaluating on the roots, and project it on C^(N/2)
     pub fn decode(&self, p: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        let rescaled_p = p / Complex64::new(self.scale, 0.0);
+        let rescaled_p = p.scale(1.0 / self.scale);
         let z = self.sigma(&rescaled_p);
         let pi_z = self.pi(&z);
         pi_z
@@ -452,6 +454,56 @@ mod complex {
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
         let sig_r_disc = encoder.sigma_r_discretization(&vect);
         assert_eq!(sig_r_disc.len(), vect.len());
+    }
+
+    #[test]
+    fn encode() {
+        let plain = DMatrix::from_vec(
+            2,
+            1,
+            vec![Complex64::new(3.0, 4.0), Complex64::new(2.0, -1.0)],
+        );
+
+        let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
+        let encoded = encoder.encode(&plain);
+        assert_eq!(encoded.len(), 4);
+    }
+
+    #[test]
+    fn decode() {
+        let encoded = DMatrix::from_vec(
+            4,
+            1,
+            vec![
+                Complex64::new(160.0, -0.000000000000021316282072803006),
+                Complex64::new(68.0, 0.000000000000014210854715202007),
+                Complex64::new(
+                    0.000000000000007105427357601,
+                    0.000000000000000000000000000007296963373294356,
+                ),
+                Complex64::new(68.0, -0.000000000000007105427357601005),
+            ],
+        );
+
+        let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
+        let decoded = encoder.decode(&encoded);
+        println!("decoded {}", decoded);
+        assert_eq!(decoded.len(), 2);
+    }
+
+    #[test]
+    fn encode_then_decode() {
+        let plain = DMatrix::from_vec(
+            2,
+            1,
+            vec![Complex64::new(3.0, 4.0), Complex64::new(2.0, -1.0)],
+        );
+
+        let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
+        let encoded = encoder.encode(&plain);
+        let decoded = encoder.decode(&encoded);
+        println!("decoded {}", decoded);
+        assert_eq!(decoded.len(), 4);
     }
 
     #[test]
