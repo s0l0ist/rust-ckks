@@ -44,6 +44,9 @@ impl Encoder {
     // Expands a vector of C^{N/2} by expanding it with its complex conjugate.
     pub fn pi_inverse(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
         let mut z_concat: Vec<Complex64> = Vec::with_capacity(self.n * 2);
+
+        // TODO: Simplify the concatenation
+        // let z_conjugate = z.conjugate();
         let mut z_conjugate: Vec<Complex64> = Vec::with_capacity(self.n);
         for coeff in z.iter() {
             z_concat.push(coeff.clone());
