@@ -78,10 +78,15 @@ impl Encoder {
     }
 
     // TODO: Gives the integral rest.
-    // pub fn round_coordinates(coordinates: &DMatrix<f64>) -> DMatrix<f64> {
-    //     coordinates = coordinates - coordinates.
-    //     coordinates
-    // }
+    pub fn round_coordinates(&self, coordinates: &DMatrix<f64>) -> DMatrix<f64> {
+        let mut output: Vec<f64> = vec![];
+        for coeff in coordinates.iter() {
+            let temp = coeff - coeff.floor();
+            output.push(temp)
+        }
+        let dmatrix = DMatrix::from_row_slice(1, output.len(), &output);
+        dmatrix
+    }
 
     // Computes the Vandermonde matrix from a m-th root of unity.
     pub fn vandermonde(xi: Complex64, n: usize) -> DMatrix<Complex64> {
@@ -350,6 +355,33 @@ mod complex {
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
         let basis = encoder.compute_basis_coordinates(&vect);
         assert_eq!(basis, basis_expected);
+    }
+
+    #[test]
+    fn round_coordinates() {
+        let coordinates: DMatrix<f64> = DMatrix::from_vec(
+            NUM_COLS,
+            NUM_ROWS,
+            vec![
+                160.0,
+                90.5096679918781,
+                159.99999999999997,
+                45.25483399593886,
+            ],
+        );
+        let rounded_expected: DMatrix<f64> = DMatrix::from_vec(
+            NUM_COLS,
+            NUM_ROWS,
+            vec![
+                0.0,
+                0.5096679918781035,
+                0.9999999999999716,
+                0.2548339959388599,
+            ],
+        );
+        let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
+        let rounded = encoder.round_coordinates(&coordinates);
+        assert_eq!(rounded, rounded_expected);
     }
 
     #[test]
