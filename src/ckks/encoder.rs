@@ -62,6 +62,7 @@ impl Encoder {
             z_concat.push(coeff.clone());
             z_conjugate.push(coeff.conjugate());
         }
+        z_conjugate.reverse();
         z_concat.append(&mut z_conjugate);
         DMatrix::from_row_slice(z_concat.len(), 1, &z_concat)
     }
@@ -75,7 +76,8 @@ impl Encoder {
     pub fn compute_basis_coordinates(&self, z: &DMatrix<Complex64>) -> DMatrix<f64> {
         // output = np.array([np.real(np.vdot(z, b) / np.vdot(b,b)) for b in self.sigma_R_basis])
         let mut output: Vec<f64> = vec![];
-        let z_conj = z.conjugate();
+        let z_conj = z.adjoint(); // transpose, then conjugate
+                                  // let z_conj = z.transpose().conjugate();
         for b in self.sigma_r_basis.row_iter() {
             let ans = z_conj.dot(&b) / b.conjugate().dot(&b);
             let real = ans.real();
@@ -117,9 +119,10 @@ impl Encoder {
 
     // Projects a vector on the lattice using coordinate wise random rounding.
     pub fn sigma_r_discretization(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        let coordinates = self.compute_basis_coordinates(z);
+        let coordinates = self.compute_basis_coordinates(&z);
         let rounded_coordinates = self.coordinate_wise_random_rounding(&coordinates);
-        self.sigma_r_basis.tr_mul(&rounded_coordinates.transpose())
+        let output = self.sigma_r_basis.tr_mul(&rounded_coordinates.transpose());
+        output
     }
 
     // Computes the Vandermonde matrix from a m-th root of unity.
@@ -150,14 +153,9 @@ impl Encoder {
     // sigma inverse.
     pub fn encode(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
         let pi_z = self.pi_inverse(z);
-        let scaled_pi_z = pi_z.scale(self.scale).transpose();
+        let scaled_pi_z = pi_z.scale(self.scale);
         let rounded_scale_pi_z = self.sigma_r_discretization(&scaled_pi_z);
         let p = self.sigma_inverse(&rounded_scale_pi_z);
-
-        // We round it afterwards due to numerical imprecision
-        // coef = np.round(np.real(p.coef)).astype(int)
-        // p = Polynomial(coef)
-        // return p
         p
     }
 
@@ -242,7 +240,7 @@ mod complex {
     const SCALE: f64 = 64.0;
 
     #[test]
-    fn test_xi() {
+    fn xi() {
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
         assert_eq!(
             encoder.xi,
@@ -291,10 +289,10 @@ mod complex {
                 Complex64::new(2.0, -1.0),
                 Complex64::new(3.0, -5.0),
                 Complex64::new(4.0, 0.0),
-                Complex64::new(1.0, -0.0),
-                Complex64::new(2.0, 1.0),
-                Complex64::new(3.0, 5.0),
                 Complex64::new(4.0, -0.0),
+                Complex64::new(3.0, 5.0),
+                Complex64::new(2.0, 1.0),
+                Complex64::new(1.0, -0.0),
             ],
         );
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
@@ -370,8 +368,8 @@ mod complex {
     #[test]
     fn compute_basis_coordinates() {
         let vect = DMatrix::from_vec(
-            NUM_COLS,
             NUM_ROWS,
+            NUM_COLS,
             vec![
                 Complex64::new(192.0, 256.0),
                 Complex64::new(128.0, -64.0),
@@ -380,7 +378,7 @@ mod complex {
             ],
         );
         let basis_expected: DMatrix<f64> = DMatrix::from_vec(
-            NUM_COLS,
+            NUM_COLS, // Notice the dimensions have changed!
             NUM_ROWS,
             vec![
                 160.0,
@@ -441,8 +439,8 @@ mod complex {
     #[test]
     fn sigma_r_discretization() {
         let vect = DMatrix::from_vec(
-            NUM_COLS,
             NUM_ROWS,
+            NUM_COLS,
             vec![
                 Complex64::new(192.0, 256.0),
                 Complex64::new(128.0, -64.0),
@@ -459,8 +457,8 @@ mod complex {
     #[test]
     fn encode() {
         let plain = DMatrix::from_vec(
-            2,
-            1,
+            NUM_ROWS / 2,
+            NUM_COLS,
             vec![Complex64::new(3.0, 4.0), Complex64::new(2.0, -1.0)],
         );
 
@@ -472,38 +470,41 @@ mod complex {
     #[test]
     fn decode() {
         let encoded = DMatrix::from_vec(
-            4,
-            1,
+            NUM_ROWS,
+            NUM_COLS,
             vec![
-                Complex64::new(160.0, -0.000000000000021316282072803006),
-                Complex64::new(68.0, 0.000000000000014210854715202007),
-                Complex64::new(
-                    0.000000000000007105427357601,
-                    0.000000000000000000000000000007296963373294356,
-                ),
-                Complex64::new(68.0, -0.000000000000007105427357601005),
+                Complex64::new(160.0, 0.00000000000002842170943040401),
+                Complex64::new(91.00000000000001, 0.000000000000007105427357601003),
+                Complex64::new(160.0, -0.0000000000000026645352591003745),
+                Complex64::new(45.0, 0.0),
             ],
         );
 
+        let decode_expected = DMatrix::from_vec(
+            NUM_ROWS / 2,
+            NUM_COLS,
+            vec![
+                Complex64::new(3.0082329989778316, 4.002601910021413),
+                Complex64::new(1.991767001022168, -0.9973980899785859),
+            ],
+        );
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
         let decoded = encoder.decode(&encoded);
-        println!("decoded {}", decoded);
-        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded, decode_expected);
     }
 
     #[test]
     fn encode_then_decode() {
         let plain = DMatrix::from_vec(
-            2,
-            1,
+            NUM_ROWS / 2,
+            NUM_COLS,
             vec![Complex64::new(3.0, 4.0), Complex64::new(2.0, -1.0)],
         );
 
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
         let encoded = encoder.encode(&plain);
         let decoded = encoder.decode(&encoded);
-        println!("decoded {}", decoded);
-        assert_eq!(decoded.len(), 4);
+        assert_eq!(decoded.len(), 2);
     }
 
     #[test]
@@ -599,137 +600,4 @@ mod complex {
             Complex64::new(0.0, 0.00000000000000026766507790745728)
         )
     }
-
-    #[test]
-    fn add_two() {
-        let m1 = DMatrix::from_vec(
-            NUM_ROWS,
-            NUM_COLS,
-            vec![
-                Complex64::new(1.0, 0.0),
-                Complex64::new(2.0, 0.0),
-                Complex64::new(3.0, 0.0),
-                Complex64::new(4.0, 0.0),
-            ],
-        );
-        let m2 = DMatrix::from_vec(
-            NUM_ROWS,
-            NUM_COLS,
-            vec![
-                Complex64::new(1.0, 0.0),
-                Complex64::new(-2.0, 0.0),
-                Complex64::new(3.0, 0.0),
-                Complex64::new(-4.0, 0.0),
-            ],
-        );
-
-        let add_expected = DMatrix::from_vec(
-            NUM_ROWS,
-            NUM_COLS,
-            vec![
-                Complex64::new(2.0, -0.00000000000000012449156634005058),
-                Complex64::new(
-                    -0.0000000000000004440892098500626,
-                    0.00000000000000033306690738754696,
-                ),
-                Complex64::new(6.0, -0.00000000000000033306690738754696),
-                Complex64::new(0.0000000000000008881784197001252, 0.0),
-            ],
-        );
-        let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
-
-        let p1 = encoder.sigma_inverse(&m1);
-        let p2 = encoder.sigma_inverse(&m2);
-        let p_add = p1 + p2;
-
-        let add_decoded = encoder.sigma(&p_add);
-        assert_eq!(add_decoded, add_expected);
-    }
-
-    // #[test]
-    // fn multiply() {
-    //     let m1 = DMatrix::from_vec(
-    //         NUM_ROWS,
-    //         NUM_COLS,
-    //         vec![
-    //             Complex64::new(1.0, 0.0),
-    //             Complex64::new(2.0, 0.0),
-    //             Complex64::new(3.0, 0.0),
-    //             Complex64::new(4.0, 0.0),
-    //         ],
-    //     );
-    //     let m2 = DMatrix::from_vec(
-    //         NUM_ROWS,
-    //         NUM_COLS,
-    //         vec![
-    //             Complex64::new(1.0, 0.0),
-    //             Complex64::new(-2.0, 0.0),
-    //             Complex64::new(3.0, 0.0),
-    //             Complex64::new(-4.0, 0.0),
-    //         ],
-    //     );
-    //     let expected = DMatrix::from_vec(
-    //         NUM_ROWS,
-    //         NUM_COLS,
-    //         vec![
-    //             Complex64::new(1.0000000000000013, 0.0),
-    //             Complex64::new(-4.0, -0.0000000000000004440892098500626),
-    //             Complex64::new(8.999999999999996, -0.0000000000000002220446049250313),
-    //             Complex64::new(-16.000000000000004, -0.00000000000001176836406102666),
-    //         ],
-    //     );
-
-    //     let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
-
-    //     let p1 = encoder.sigma_inverse(&m1);
-    //     let p2 = encoder.sigma_inverse(&m2);
-    //     let plain_modulus = DMatrix::from_vec(
-    //         NUM_ROWS,
-    //         NUM_COLS,
-    //         vec![
-    //             Complex64::new(1.0, 0.0),
-    //             Complex64::new(0.0, 0.0),
-    //             Complex64::new(0.0, 0.0),
-    //             Complex64::new(0.0, 0.0),
-    //             Complex64::new(1.0, 0.0),
-    //         ],
-    //     );
-
-    //     let p_product = p1 * p2;
-    //     let (_, p_mod) = p_product.div_mod(&plain_modulus);
-    //     let sigma = encoder.sigma(&p_mod);
-    //     assert_eq!(sigma, expected);
-    // }
-
-    // #[test]
-    // fn multiply_integer_polynomials() {
-    //     let m1 = DMatrix::from_vec(
-    //         NUM_ROWS,
-    //         NUM_COLS,
-    //         vec![
-    //             Complex64::new(1.0, 0.0),
-    //             Complex64::new(2.0, 0.0),
-    //             Complex64::new(3.0, 0.0),
-    //             Complex64::new(4.0, 0.0),
-    //         ],
-    //     );
-    //     let coordinates = DMatrix::from_vec(
-    //         NUM_ROWS,
-    //         NUM_COLS,
-    //         vec![
-    //             Complex64::new(1.0, 0.0),
-    //             Complex64::new(1.0, 0.0),
-    //             Complex64::new(1.0, 0.0),
-    //             Complex64::new(1.0, 0.0),
-    //         ],
-    //     );
-
-    //     let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
-
-    //     let sigma = encoder.sigma_r_basis.transpose();
-    //     let product = sigma * coordinates;
-    //     println!("encoder.encode(&product) {:#?}", encoder.encode(&product));
-    //     println!("product {}", product);
-    //     assert_eq!(true, false);
-    // }
 }
