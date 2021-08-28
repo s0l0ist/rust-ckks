@@ -63,8 +63,7 @@ impl Encoder {
                 matrix.push(ans);
             }
         }
-        // Create dynamic matrix from our native matrix (row-major order)
-        DMatrix::from_iterator(n, n, matrix)
+        DMatrix::from_vec(n, n, matrix)
     }
 
     // Encodes a vector by expanding it first to H,
@@ -114,16 +113,14 @@ impl Encoder {
     // Computes the coordinates of a vector with respect to the orthogonal lattice basis.
     pub fn compute_basis_coordinates(&self, z: &DMatrix<Complex64>) -> DMatrix<f64> {
         // output = np.array([np.real(np.vdot(z, b) / np.vdot(b,b)) for b in self.sigma_R_basis])
-        let mut output: Vec<f64> = Vec::with_capacity(self.sigma_r_basis.nrows());
         let z_conj = z.transpose();
-
-        for b in self.sigma_r_basis.row_iter() {
+        let main_itr = self.sigma_r_basis.row_iter().map(|b| {
             let ans = z_conj.dotc(&b) / b.dotc(&b);
             let real = ans.real();
-            output.push(real);
-        }
+            real
+        });
 
-        DMatrix::from_vec(1, self.sigma_r_basis.nrows(), output)
+        DMatrix::from_iterator(1, self.sigma_r_basis.nrows(), main_itr)
     }
 
     // Rounds coordinates randonmly.
