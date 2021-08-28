@@ -9,23 +9,26 @@ edition = "2018"
 name = "ckks"
 path = "src/lib.rs"
 crate-type = ["lib"]
+# Disable `cargo bench` from looking into lib
+bench = false
 
 [dependencies]
 # nalgebra - used for linear algebra (matrix computation)
 nalgebra = "0.29"
-# num-bigint - used to easily multiply big numbers
-num-bigint = { version = "0.4", features = ["serde"] }
-# num-traits - used to generate bignums
-num-traits = "0.2"
 # num-complex - used for complex numbers
 num-complex = "0.4"
-# num-integer - used to restrict generics
-num-integer = "0.1"
 # ark-poly - used to convert vectors into polynomials and evaluate them
-ark-poly = "0.3"
 rustnomial = "0.3"
 # rand - used to sample random values
 rand = "0.8"
+
+[dev-dependencies]
+# criterion - used for benchmarking
+criterion = "0.3.5"
+
+[[bench]]
+name = "ckks_benchmark"
+harness = false
 
 [profile.release]
 opt-level = 3

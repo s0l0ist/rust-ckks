@@ -19,7 +19,7 @@ pub struct Encoder {
 impl Encoder {
     // Initialization of the encoder for M, a power of 2.
     //
-    // xi, which is an m-th root of unity will, be used as a basis for our computations
+    // xi, which is an m-th root of unity, will be used as a basis for our computations
     pub fn new(m: usize, scale: f64) -> Self {
         // xi = e^(2 * pi * i / m)
         let xi = (2.0 * std::f64::consts::PI * Complex64::new(0.0, 1.0) / (m as f64)).exp();
@@ -41,30 +41,32 @@ impl Encoder {
 
     // Projects a vector of H into C^{N/2}.
     pub fn pi(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        let mut z_slice: Vec<Complex64> = Vec::with_capacity(self.n);
-        for coeff in z.iter() {
-            z_slice.push(coeff.clone());
-        }
-        let n = self.m / 4;
-        DMatrix::from_row_slice(n, 1, &z_slice[..n])
+        z.rows(0, z.nrows() / 2).clone_owned()
     }
 
     // Expands a vector of C^{N/2} by expanding it with its complex conjugate.
     pub fn pi_inverse(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        // let mut z_concat: Vec<Complex64> = Vec::with_capacity(self.n * 2);
-        let mut z_concat: Vec<Complex64> = vec![];
+        // We want a 1-d Matrix of [z.nrows() * 2, z.ncols()]
+        // [
+        //   ...z_orginal...,
+        //   ...z_conj_reversed...
+        // ]
 
-        // TODO: Simplify the concatenation
-        // let z_conjugate = z.conjugate();
-        // let mut z_conjugate: Vec<Complex64> = Vec::with_capacity(self.n);
-        let mut z_conjugate: Vec<Complex64> = vec![];
-        for coeff in z.iter() {
-            z_concat.push(coeff.clone());
-            z_conjugate.push(coeff.conjugate());
-        }
-        z_conjugate.reverse();
-        z_concat.append(&mut z_conjugate);
-        DMatrix::from_row_slice(z_concat.len(), 1, &z_concat)
+        // Slower way (but makes sense)
+        let z_conj = z.conjugate();
+        let whole_itr = z.iter().chain(z_conj.iter().rev());
+        DMatrix::from_iterator(z.nrows() * 2, z.ncols(), whole_itr.cloned())
+
+        // Faster way (not sure why)
+        // let mut first_half: Vec<Complex64> = Vec::with_capacity(z.len());
+        // let mut z_conj: Vec<Complex64> = Vec::with_capacity(z.len());
+        // for coeff in z.iter() {
+        //     first_half.push(*coeff);
+        //     z_conj.push(coeff.conjugate());
+        // }
+
+        // let whole_itr = first_half.into_iter().chain(z_conj.into_iter().rev());
+        // DMatrix::from_iterator(z.nrows() * 2, z.ncols(), whole_itr)
     }
 
     // Creates the basis (sigma(1), sigma(X), ..., sigma(X** N-1)).
@@ -161,8 +163,12 @@ impl Encoder {
 
     // Decodes a polynomial by removing the scale,
     // evaluating on the roots, and project it on C^(N/2)
+    //
+    // To decode a polynomial m(X) into a vector z, we evaluate the
+    // polynomial on certain values, which will be the roots of the
+    // cyclotomic polynomial ΦM(X)=X^N + 1. Those N roots are : ξ,ξ^3,...,ξ^(2N−1).
     pub fn decode(&self, p: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        let rescaled_p = p.scale(1.0 / self.scale);
+        let rescaled_p = p.unscale(self.scale);
         let z = self.sigma(&rescaled_p);
         let pi_z = self.pi(&z);
         pi_z
