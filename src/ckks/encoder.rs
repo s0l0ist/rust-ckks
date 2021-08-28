@@ -106,8 +106,7 @@ impl Encoder {
     pub fn sigma_r_discretization(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
         let coordinates = self.compute_basis_coordinates(&z);
         let rounded_coordinates = self.coordinate_wise_random_rounding(&coordinates);
-        let output = self.sigma_r_basis.tr_mul(&rounded_coordinates.transpose());
-        output
+        self.sigma_r_basis.tr_mul(&rounded_coordinates.transpose())
     }
 
     // Computes the coordinates of a vector with respect to the orthogonal lattice basis.
@@ -128,29 +127,23 @@ impl Encoder {
         &self,
         coordinates: &DMatrix<f64>,
     ) -> DMatrix<Complex64> {
-        let mut output: Vec<f64> = vec![];
         let r = self.round_coordinates(coordinates);
         let mut rng_ref = self.rng.borrow_mut();
-        for &c in r.iter() {
-            let choices = vec![c, c - 1.0];
-            let wieghts = vec![1.0 - c, c];
-            let sample = rng_ref.weighted_choice(&choices, &wieghts);
-            output.push(sample);
-        }
 
-        let dmatrix = DMatrix::from_row_slice(1, output.len(), &output);
+        let itr = r.iter().map(|&c| {
+            let choices = [c, c - 1.0];
+            let wieghts = [1.0 - c, c];
+            rng_ref.weighted_choice(&choices, &wieghts)
+        });
+        let dmatrix = DMatrix::from_iterator(1, coordinates.len(), itr);
         let rounded_coordinates = coordinates - dmatrix;
-        rounded_coordinates.map(|x| Complex64::new(x, 0.0))
+        rounded_coordinates.map(Complex64::from)
     }
 
     // Gives the integral rest.
     pub fn round_coordinates(&self, coordinates: &DMatrix<f64>) -> DMatrix<f64> {
-        let mut output: Vec<f64> = vec![];
-        for coeff in coordinates.iter() {
-            let temp = coeff - coeff.floor();
-            output.push(temp)
-        }
-        DMatrix::from_row_slice(1, output.len(), &output)
+        let itr = coordinates.iter().map(|coeff| coeff - coeff.floor());
+        DMatrix::from_iterator(1, coordinates.len(), itr)
     }
 
     // sigma-inverse is a vector, b, in a polynomial using an m-th root of unity
@@ -158,9 +151,7 @@ impl Encoder {
         // First we create the Vandermonde matrix
         let a = Encoder::vandermonde(self.xi, self.n).transpose();
         // Then we solve the system and return the resultant matrix
-        let decomp = a.lu();
-        let x_coeffs = decomp.solve(b).expect("Linear resolution failed.");
-        x_coeffs
+        a.lu().solve(b).expect("Linear resolution failed.")
     }
 
     // Decodes a polynomial by removing the scale,

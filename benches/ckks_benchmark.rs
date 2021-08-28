@@ -16,7 +16,9 @@ fn gen_rand_complex_vec(num_elements: usize) -> Vec<Complex64> {
         .sample_iter(Standard)
         .take(num_elements)
         .collect();
-    v.iter().map(|&x| Complex64::new(x.0, x.1)).collect()
+    v.iter()
+        .map(|&x| num_complex::Complex64::new(x.0, x.1))
+        .collect()
 }
 
 fn bench_pi(c: &mut Criterion) {
@@ -80,10 +82,37 @@ fn bench_compute_basis_coordinates(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_coordinate_wise_random_rounding(c: &mut Criterion) {
+    let cv = gen_rand_complex_vec(NUM_ELEMENTS);
+    let rv: Vec<f64> = cv.iter().map(|&x| x.re).collect();
+    let mat = DMatrix::from_vec(1, cv.len(), rv);
+
+    let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
+
+    let mut group = c.benchmark_group("CKKS");
+    group.bench_with_input(
+        BenchmarkId::new("coordinate_wise_random_rounding", NUM_ELEMENTS),
+        &mat,
+        |b, x| {
+            b.iter(|| black_box(encoder.coordinate_wise_random_rounding(x)));
+        },
+    );
+    group.bench_with_input(
+        BenchmarkId::new("round_coordinates", NUM_ELEMENTS),
+        &mat,
+        |b, x| {
+            b.iter(|| black_box(encoder.round_coordinates(x)));
+        },
+    );
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_pi,
     bench_create_sigma_r_basis,
-    bench_compute_basis_coordinates
+    bench_compute_basis_coordinates,
+    bench_coordinate_wise_random_rounding
 );
 criterion_main!(benches);
