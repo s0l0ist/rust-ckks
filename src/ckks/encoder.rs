@@ -39,9 +39,43 @@ impl Encoder {
         }
     }
 
-    // Projects a vector of H into C^{N/2}.
-    pub fn pi(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        z.rows(0, z.nrows() / 2).clone_owned()
+    // Creates the basis (sigma(1), sigma(X), ..., sigma(X** N-1)).
+    pub fn create_sigma_r_basis(xi: Complex64, n: usize) -> DMatrix<Complex64> {
+        Encoder::vandermonde(xi, n)
+    }
+
+    // Computes the Vandermonde matrix from a m-th root of unity.
+    pub fn vandermonde(xi: Complex64, n: usize) -> DMatrix<Complex64> {
+        // We will generate a flat Vector containing all elements for
+        // a matrix
+        let mut matrix: Vec<Complex64> = Vec::with_capacity(n * n);
+        for i in 0..n {
+            // For each row we select a different root
+            // root = xi ^ (2i + 1)
+            let root = xi.powu((2 * i as u32) + 1);
+
+            // Then we store its powers
+            for j in 0..n {
+                // ans = root ^ j
+                let ans = root.powu(j as u32);
+
+                // Push into a flat 1D vector that will be transformed into a matrix later
+                matrix.push(ans);
+            }
+        }
+        // Create dynamic matrix from our native matrix (row-major order)
+        DMatrix::from_iterator(n, n, matrix)
+    }
+
+    // Encodes a vector by expanding it first to H,
+    // scale it, project it on the lattice of sigma(R), and performs
+    // sigma inverse.
+    pub fn encode(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
+        let pi_z = self.pi_inverse(z);
+        let scaled_pi_z = pi_z.scale(self.scale);
+        let rounded_scale_pi_z = self.sigma_r_discretization(&scaled_pi_z);
+        let p = self.sigma_inverse(&rounded_scale_pi_z);
+        p
     }
 
     // Expands a vector of C^{N/2} by expanding it with its complex conjugate.
@@ -69,34 +103,27 @@ impl Encoder {
         // DMatrix::from_iterator(z.nrows() * 2, z.ncols(), whole_itr)
     }
 
-    // Creates the basis (sigma(1), sigma(X), ..., sigma(X** N-1)).
-    pub fn create_sigma_r_basis(xi: Complex64, n: usize) -> DMatrix<Complex64> {
-        Encoder::vandermonde(xi, n).transpose()
+    // Projects a vector on the lattice using coordinate wise random rounding.
+    pub fn sigma_r_discretization(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
+        let coordinates = self.compute_basis_coordinates(&z);
+        let rounded_coordinates = self.coordinate_wise_random_rounding(&coordinates);
+        let output = self.sigma_r_basis.tr_mul(&rounded_coordinates.transpose());
+        output
     }
 
     // Computes the coordinates of a vector with respect to the orthogonal lattice basis.
     pub fn compute_basis_coordinates(&self, z: &DMatrix<Complex64>) -> DMatrix<f64> {
         // output = np.array([np.real(np.vdot(z, b) / np.vdot(b,b)) for b in self.sigma_R_basis])
-        let mut output: Vec<f64> = vec![];
-        let z_conj = z.adjoint(); // transpose, then conjugate
-                                  // let z_conj = z.transpose().conjugate();
+        let mut output: Vec<f64> = Vec::with_capacity(self.sigma_r_basis.nrows());
+        let z_conj = z.transpose();
+
         for b in self.sigma_r_basis.row_iter() {
-            let ans = z_conj.dot(&b) / b.conjugate().dot(&b);
+            let ans = z_conj.dotc(&b) / b.dotc(&b);
             let real = ans.real();
             output.push(real);
         }
 
-        DMatrix::from_row_slice(1, output.len(), &output)
-    }
-
-    // Gives the integral rest.
-    pub fn round_coordinates(&self, coordinates: &DMatrix<f64>) -> DMatrix<f64> {
-        let mut output: Vec<f64> = vec![];
-        for coeff in coordinates.iter() {
-            let temp = coeff - coeff.floor();
-            output.push(temp)
-        }
-        DMatrix::from_row_slice(1, output.len(), &output)
+        DMatrix::from_vec(1, self.sigma_r_basis.nrows(), output)
     }
 
     // Rounds coordinates randonmly.
@@ -119,46 +146,24 @@ impl Encoder {
         rounded_coordinates.map(|x| Complex64::new(x, 0.0))
     }
 
-    // Projects a vector on the lattice using coordinate wise random rounding.
-    pub fn sigma_r_discretization(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        let coordinates = self.compute_basis_coordinates(&z);
-        let rounded_coordinates = self.coordinate_wise_random_rounding(&coordinates);
-        let output = self.sigma_r_basis.tr_mul(&rounded_coordinates.transpose());
-        output
-    }
-
-    // Computes the Vandermonde matrix from a m-th root of unity.
-    pub fn vandermonde(xi: Complex64, n: usize) -> DMatrix<Complex64> {
-        // We will generate a flat Vector containing all elements for
-        // a matrix
-        let mut matrix: Vec<Complex64> = Vec::with_capacity(n);
-        for i in 0..n {
-            let i: u32 = i.try_into().expect("Couldn't convert usize to u32");
-            // For each row we select a different root
-            let root: Complex64 = xi.powu((2 * i) + 1);
-
-            // Then we store its powers
-            for j in 0..n {
-                let j: u32 = j.try_into().expect("Couldn't convert usize to u32");
-                let ans = root.powu(j);
-
-                // Push into a flat 1D vector that will be transformed into a matrix later
-                matrix.push(ans);
-            }
+    // Gives the integral rest.
+    pub fn round_coordinates(&self, coordinates: &DMatrix<f64>) -> DMatrix<f64> {
+        let mut output: Vec<f64> = vec![];
+        for coeff in coordinates.iter() {
+            let temp = coeff - coeff.floor();
+            output.push(temp)
         }
-        // Create dynamic matrix from our native matrix (row-major order)
-        DMatrix::from_row_slice(n, n, &matrix)
+        DMatrix::from_row_slice(1, output.len(), &output)
     }
 
-    // Encodes a vector by expanding it first to H,
-    // scale it, project it on the lattice of sigma(R), and performs
-    // sigma inverse.
-    pub fn encode(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        let pi_z = self.pi_inverse(z);
-        let scaled_pi_z = pi_z.scale(self.scale);
-        let rounded_scale_pi_z = self.sigma_r_discretization(&scaled_pi_z);
-        let p = self.sigma_inverse(&rounded_scale_pi_z);
-        p
+    // sigma-inverse is a vector, b, in a polynomial using an m-th root of unity
+    pub fn sigma_inverse(&self, b: &DMatrix<Complex64>) -> DMatrix<Complex64> {
+        // First we create the Vandermonde matrix
+        let a = Encoder::vandermonde(self.xi, self.n).transpose();
+        // Then we solve the system and return the resultant matrix
+        let decomp = a.lu();
+        let x_coeffs = decomp.solve(b).expect("Linear resolution failed.");
+        x_coeffs
     }
 
     // Decodes a polynomial by removing the scale,
@@ -174,14 +179,9 @@ impl Encoder {
         pi_z
     }
 
-    // sigma-inverse is a vector, b, in a polynomial using an m-th root of unity
-    pub fn sigma_inverse(&self, b: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        // First we create the Vandermonde matrix
-        let a = Encoder::vandermonde(self.xi, self.n);
-        // Then we solve the system and return the resultant matrix
-        let decomp = a.lu();
-        let x_coeffs = decomp.solve(b).expect("Linear resolution failed.");
-        x_coeffs
+    // Projects a vector of H into C^{N/2}.
+    pub fn pi(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
+        z.rows(0, z.nrows() / 2).clone_owned()
     }
 
     // sigma a polynomial by applying it to the M-th roots of unity.
@@ -312,10 +312,10 @@ mod complex {
             NUM_ELEMENTS / 2, // n is (m / 2)
         );
 
-        let vandermonde_expected = DMatrix::from_vec(
+        let vandermonde_expected = DMatrix::from_row_slice(
             NUM_ROWS,
             NUM_ROWS, // Num of cols is the same as rows
-            vec![
+            &vec![
                 Complex64::new(1.0, 0.0),
                 Complex64::new(1.0, 0.0),
                 Complex64::new(1.0, 0.0),
