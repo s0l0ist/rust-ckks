@@ -11,14 +11,13 @@ const NUM_ELEMENTS: usize = 1024;
 
 // Generates a vector of a given size with random complex (real, im) values
 fn gen_rand_complex_vec(num_elements: usize) -> Vec<Complex64> {
-    let mut rng = rand::thread_rng();
-    let v: Vec<(f64, f64)> = (&mut rng)
-        .sample_iter(Standard)
+    let rng = rand::thread_rng();
+    rng.sample_iter(Standard)
         .take(num_elements)
-        .collect();
-    v.iter()
-        .map(|&x| num_complex::Complex64::new(x.0, x.1))
-        .collect()
+        .collect::<Vec<(f64, f64)>>()
+        .iter()
+        .map(|&x| Complex64::new(x.0, x.1))
+        .collect::<Vec<Complex64>>()
 }
 
 fn bench_pi(c: &mut Criterion) {
@@ -34,7 +33,7 @@ fn bench_pi(c: &mut Criterion) {
         BenchmarkId::new("pi_inverse", plain.len()),
         &plain,
         |b, p| {
-            b.iter(|| encoder.pi_inverse(&p));
+            b.iter(|| black_box(encoder.pi_inverse(&p)));
         },
     );
 
@@ -50,14 +49,14 @@ fn bench_create_sigma_r_basis(c: &mut Criterion) {
         BenchmarkId::new("create_sigma_r_basis", NUM_ELEMENTS),
         &xi,
         |b, &x| {
-            b.iter(|| Encoder::create_sigma_r_basis(x, n));
+            b.iter(|| black_box(Encoder::create_sigma_r_basis(x, n)));
         },
     );
     group.bench_with_input(
         BenchmarkId::new("vandermonde", NUM_ELEMENTS),
         &xi,
         |b, &x| {
-            b.iter(|| Encoder::vandermonde(x, n));
+            b.iter(|| black_box(Encoder::vandermonde(x, n)));
         },
     );
 
@@ -82,7 +81,7 @@ fn bench_compute_basis_coordinates(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_coordinate_wise_random_rounding(c: &mut Criterion) {
+fn bench_rounding(c: &mut Criterion) {
     let cv = gen_rand_complex_vec(NUM_ELEMENTS);
     let rv: Vec<f64> = cv.iter().map(|&x| x.re).collect();
     let mat = DMatrix::from_vec(1, cv.len(), rv);
@@ -107,12 +106,67 @@ fn bench_coordinate_wise_random_rounding(c: &mut Criterion) {
 
     group.finish();
 }
+fn bench_sigma_r_discretization(c: &mut Criterion) {
+    let cv = gen_rand_complex_vec(NUM_ELEMENTS / 2);
+    let mat = DMatrix::from_vec(cv.len(), 1, cv);
+
+    let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
+
+    let mut group = c.benchmark_group("CKKS");
+
+    group.bench_with_input(
+        BenchmarkId::new("sigma_r_discretization", NUM_ELEMENTS),
+        &mat,
+        |b, x| {
+            b.iter(|| black_box(encoder.sigma_r_discretization(x)));
+        },
+    );
+
+    group.finish();
+}
+
+fn bench_sigma_inverse(c: &mut Criterion) {
+    let cv = gen_rand_complex_vec(NUM_ELEMENTS / 2);
+    let mat = DMatrix::from_vec(cv.len(), 1, cv);
+
+    let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
+
+    let mut group = c.benchmark_group("CKKS");
+
+    group.bench_with_input(
+        BenchmarkId::new("sigma_inverse", NUM_ELEMENTS),
+        &mat,
+        |b, x| {
+            b.iter(|| black_box(encoder.sigma_inverse(x)));
+        },
+    );
+
+    group.finish();
+}
+
+fn bench_encode(c: &mut Criterion) {
+    let cv = gen_rand_complex_vec(NUM_ELEMENTS / 4);
+    let mat = DMatrix::from_vec(cv.len(), 1, cv);
+
+    let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
+
+    let mut group = c.benchmark_group("CKKS");
+
+    group.bench_with_input(BenchmarkId::new("encode", NUM_ELEMENTS), &mat, |b, x| {
+        b.iter(|| black_box(encoder.encode(x)));
+    });
+
+    group.finish();
+}
 
 criterion_group!(
     benches,
     bench_pi,
     bench_create_sigma_r_basis,
     bench_compute_basis_coordinates,
-    bench_coordinate_wise_random_rounding
+    bench_rounding,
+    bench_sigma_r_discretization,
+    bench_sigma_inverse,
+    bench_encode
 );
 criterion_main!(benches);

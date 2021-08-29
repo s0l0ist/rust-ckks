@@ -1,5 +1,4 @@
 use crate::ckks::random::UniformRandomGenerator;
-use crate::na::ComplexField;
 use na::DMatrix;
 use num_complex::Complex64;
 use rustnomial::{Evaluable, Polynomial};
@@ -115,8 +114,7 @@ impl Encoder {
         let z_conj = z.transpose();
         let main_itr = self.sigma_r_basis.row_iter().map(|b| {
             let ans = z_conj.dotc(&b) / b.dotc(&b);
-            let real = ans.real();
-            real
+            ans.re
         });
 
         DMatrix::from_iterator(1, self.sigma_r_basis.nrows(), main_itr)
@@ -151,7 +149,8 @@ impl Encoder {
         // First we create the Vandermonde matrix
         let a = Encoder::vandermonde(self.xi, self.n).transpose();
         // Then we solve the system and return the resultant matrix
-        a.lu().solve(b).expect("Linear resolution failed.")
+        // a.lu().solve(b).expect("Linear resolution failed.")
+        a.lu().solve(b).unwrap()
     }
 
     // Decodes a polynomial by removing the scale,
@@ -546,7 +545,6 @@ mod complex {
 
         let encoder = Encoder::new(NUM_ELEMENTS, SCALE);
         let sigma_inv = encoder.sigma_inverse(&plain);
-        // let sigma_inv_matrix = encoder.from_polynomial(&sigma_inv);
         assert_eq!(sigma_inv, sigma_inv_expected);
     }
 
