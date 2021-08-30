@@ -11,12 +11,19 @@ const NUM_ELEMENTS: usize = 1024;
 
 // Generates a vector of a given size with random complex (real, im) values
 fn gen_rand_complex_vec(num_elements: usize) -> Vec<Complex64> {
-    let rng = rand::thread_rng();
-    rng.sample_iter(Standard)
+    let real = rand::thread_rng()
+        .sample_iter(Standard)
         .take(num_elements)
-        .collect::<Vec<(f64, f64)>>()
-        .iter()
-        .map(|&x| Complex64::new(x.0, x.1))
+        .collect::<Vec<f64>>();
+
+    let img = rand::thread_rng()
+        .sample_iter(Standard)
+        .take(num_elements)
+        .collect::<Vec<f64>>();
+
+    real.iter()
+        .zip(img.iter())
+        .map(|(&r, &i)| Complex64::new(r, i))
         .collect::<Vec<Complex64>>()
 }
 
