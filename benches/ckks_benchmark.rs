@@ -34,13 +34,13 @@ fn bench_pi(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("CKKS");
     group.bench_with_input(BenchmarkId::new("pi", NUM_ELEMENTS), &plain, |b, p| {
-        b.iter(|| encoder.pi(&p));
+        b.iter(|| encoder.pi(p));
     });
     group.bench_with_input(
         BenchmarkId::new("pi_inverse", plain.len()),
         &plain,
         |b, p| {
-            b.iter(|| black_box(encoder.pi_inverse(&p)));
+            b.iter(|| black_box(encoder.pi_inverse(p)));
         },
     );
 

@@ -5,6 +5,12 @@ pub struct UniformRandomGenerator {
     rng: ThreadRng,
 }
 
+impl Default for UniformRandomGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UniformRandomGenerator {
     pub fn new() -> Self {
         Self { rng: rand::rng() }

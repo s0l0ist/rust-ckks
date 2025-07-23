@@ -72,8 +72,8 @@ impl Encoder {
         let pi_z = self.pi_inverse(z);
         let scaled_pi_z = pi_z.scale(self.scale);
         let rounded_scale_pi_z = self.sigma_r_discretization(&scaled_pi_z);
-        let p = self.sigma_inverse(&rounded_scale_pi_z);
-        p
+        
+        self.sigma_inverse(&rounded_scale_pi_z)
     }
 
     // Expands a vector of C^{N/2} by expanding it with its complex conjugate.
@@ -103,7 +103,7 @@ impl Encoder {
 
     // Projects a vector on the lattice using coordinate wise random rounding.
     pub fn sigma_r_discretization(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        let coordinates = self.compute_basis_coordinates(&z);
+        let coordinates = self.compute_basis_coordinates(z);
         let rounded_coordinates = self.coordinate_wise_random_rounding(&coordinates);
         self.sigma_r_basis.tr_mul(&rounded_coordinates.transpose())
     }
@@ -162,8 +162,8 @@ impl Encoder {
     pub fn decode(&self, p: &DMatrix<Complex64>) -> DMatrix<Complex64> {
         let rescaled_p = p.unscale(self.scale);
         let z = self.sigma(&rescaled_p);
-        let pi_z = self.pi(&z);
-        pi_z
+        
+        self.pi(&z)
     }
 
     // Projects a vector of H into C^{N/2}.
@@ -174,7 +174,7 @@ impl Encoder {
     // sigma a polynomial by applying it to the M-th roots of unity.
     pub fn sigma(&self, p: &DMatrix<Complex64>) -> DMatrix<Complex64> {
         // We simply apply the polynomial on the roots
-        let poly = Encoder::to_polynomial(&self, &p);
+        let poly = Encoder::to_polynomial(self, p);
 
         let mut matrix: Vec<Complex64> = Vec::with_capacity(self.n);
         for i in 0..self.n {
@@ -186,8 +186,7 @@ impl Encoder {
         }
 
         // We will always return n cols x 1 row matrix;
-        let dmatrix = DMatrix::from_row_slice(self.n, 1, &matrix);
-        dmatrix
+        DMatrix::from_row_slice(self.n, 1, &matrix)
     }
 
     // Converts a matrix into a polynomial
@@ -196,21 +195,21 @@ impl Encoder {
         // calling .collect() refuses to work.
         let mut poly_vec: Vec<Complex64> = Vec::with_capacity(self.n);
         for coeff in x_coeffs.iter() {
-            poly_vec.push(coeff.clone());
+            poly_vec.push(*coeff);
         }
         // Reverse the vec because the 'polynomials' library constructs
         // a polynomial with the highest power to lowest power ex: 3x^3 + 2x^2 + x + 8
         // and we need it in the form of 8 + x + 2x^2 + 3x^3
         poly_vec.reverse();
-        let poly = Polynomial::new(poly_vec);
-        poly
+        
+        Polynomial::new(poly_vec)
     }
 
     // Converts a polynomial into a matrix
     pub fn from_polynomial(&self, poly: &Polynomial<Complex64>) -> DMatrix<Complex64> {
         let mut matrix: Vec<Complex64> = Vec::with_capacity(self.n);
         for coeff in poly.terms.iter() {
-            matrix.push(coeff.clone());
+            matrix.push(*coeff);
         }
 
         // Reverse the vec because the 'polynomials' library constructs
@@ -218,8 +217,7 @@ impl Encoder {
         // and we need it in the form of 8 + x + 2x^2 + 3x^3
         matrix.reverse();
 
-        let dmatrix = DMatrix::from_row_slice(self.n, 1, &matrix);
-        dmatrix
+        DMatrix::from_row_slice(self.n, 1, &matrix)
     }
 }
 
