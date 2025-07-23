@@ -1,10 +1,10 @@
 use ckks::ckks::encoder::Encoder;
 use core::hint::black_box;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use nalgebra::DMatrix;
 use num_complex::Complex64;
-use rand::distr::StandardUniform;
 use rand::Rng;
+use rand::distr::StandardUniform;
 
 const SCALE: f64 = 64.0;
 const NUM_ELEMENTS: usize = 1024;
