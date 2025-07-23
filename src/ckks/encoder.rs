@@ -3,7 +3,6 @@ use nalgebra::DMatrix;
 use num_complex::Complex64;
 use rustnomial::{Evaluable, Polynomial};
 use std::cell::RefCell;
-use std::convert::TryInto;
 
 // Basic CKKS encoder to encode complex vectors into polynomials.
 pub struct Encoder {
@@ -11,21 +10,22 @@ pub struct Encoder {
     pub m: usize,
     pub n: usize,
     pub sigma_r_basis: DMatrix<Complex64>,
+    pub sigma_r_basis_norms: Vec<f64>,
+    pub vandermonde_t: DMatrix<Complex64>,
     pub scale: f64,
     pub rng: RefCell<UniformRandomGenerator>,
 }
 
 impl Encoder {
-    // Initialization of the encoder for M, a power of 2.
-    //
-    // xi, which is an m-th root of unity, will be used as a basis for our computations
     pub fn new(m: usize, scale: f64) -> Self {
-        // xi = e^(2 * pi * i / m)
         let xi = (2.0 * std::f64::consts::PI * Complex64::new(0.0, 1.0) / (m as f64)).exp();
         let n = m / 2;
         let sigma_r_basis = Encoder::create_sigma_r_basis(xi, n);
-
-        // also hold a ref to a mutable RNG
+        let sigma_r_basis_norms = sigma_r_basis
+            .row_iter()
+            .map(|b| b.iter().map(|x| x.norm_sqr()).sum())
+            .collect();
+        let vandermonde_t = Encoder::vandermonde(xi, n).transpose();
         let rng = RefCell::new(UniformRandomGenerator::new());
 
         Self {
@@ -33,191 +33,123 @@ impl Encoder {
             m,
             n,
             sigma_r_basis,
+            sigma_r_basis_norms,
+            vandermonde_t,
             scale,
             rng,
         }
     }
 
-    // Creates the basis (sigma(1), sigma(X), ..., sigma(X** N-1)).
     pub fn create_sigma_r_basis(xi: Complex64, n: usize) -> DMatrix<Complex64> {
         Encoder::vandermonde(xi, n)
     }
 
-    // Computes the Vandermonde matrix from a m-th root of unity.
     pub fn vandermonde(xi: Complex64, n: usize) -> DMatrix<Complex64> {
-        // We will generate a flat Vector containing all elements for
-        // a matrix
-        let mut matrix: Vec<Complex64> = Vec::with_capacity(n * n);
+        let mut matrix = Vec::with_capacity(n * n);
         for i in 0..n {
-            // For each row we select a different root
-            // root = xi ^ (2i + 1)
             let root = xi.powu((2 * i as u32) + 1);
-
-            // Then we store its powers
-            for j in 0..n {
-                // ans = root ^ j
-                let ans = root.powu(j as u32);
-
-                // Push into a flat 1D vector that will be transformed into a matrix later
-                matrix.push(ans);
+            let mut power = Complex64::new(1.0, 0.0);
+            for _ in 0..n {
+                matrix.push(power);
+                power *= root;
             }
         }
         DMatrix::from_vec(n, n, matrix)
     }
 
-    // Encodes a vector by expanding it first to H,
-    // scale it, project it on the lattice of sigma(R), and performs
-    // sigma inverse.
     pub fn encode(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
         let pi_z = self.pi_inverse(z);
         let scaled_pi_z = pi_z.scale(self.scale);
         let rounded_scale_pi_z = self.sigma_r_discretization(&scaled_pi_z);
-        
         self.sigma_inverse(&rounded_scale_pi_z)
     }
 
-    // Expands a vector of C^{N/2} by expanding it with its complex conjugate.
     pub fn pi_inverse(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        // We want a 1-d Matrix of [z.nrows() * 2, z.ncols()]
-        // [
-        //   ...z_orginal...,
-        //   ...z_conj_reversed...
-        // ]
-
-        // Slower way (but makes sense)
-        let z_conj = z.conjugate();
-        let whole_itr = z.iter().chain(z_conj.iter().rev());
-        DMatrix::from_iterator(z.nrows() * 2, z.ncols(), whole_itr.cloned())
-
-        // Faster way (not sure why)
-        // let mut first_half: Vec<Complex64> = Vec::with_capacity(z.len());
-        // let mut z_conj: Vec<Complex64> = Vec::with_capacity(z.len());
-        // for coeff in z.iter() {
-        //     first_half.push(*coeff);
-        //     z_conj.push(coeff.conjugate());
-        // }
-
-        // let whole_itr = first_half.into_iter().chain(z_conj.into_iter().rev());
-        // DMatrix::from_iterator(z.nrows() * 2, z.ncols(), whole_itr)
+        let conj = z.conjugate();
+        let conj_rev = conj.iter().rev().cloned();
+        let combined = z.iter().cloned().chain(conj_rev);
+        DMatrix::from_iterator(z.nrows() * 2, z.ncols(), combined)
     }
-
-    // Projects a vector on the lattice using coordinate wise random rounding.
     pub fn sigma_r_discretization(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
         let coordinates = self.compute_basis_coordinates(z);
         let rounded_coordinates = self.coordinate_wise_random_rounding(&coordinates);
         self.sigma_r_basis.tr_mul(&rounded_coordinates.transpose())
     }
 
-    // Computes the coordinates of a vector with respect to the orthogonal lattice basis.
     pub fn compute_basis_coordinates(&self, z: &DMatrix<Complex64>) -> DMatrix<f64> {
-        // output = np.array([np.real(np.vdot(z, b) / np.vdot(b,b)) for b in self.sigma_R_basis])
-        let z_conj = z.transpose();
-        let main_itr = self.sigma_r_basis.row_iter().map(|b| {
-            let ans = z_conj.dotc(&b) / b.dotc(&b);
-            ans.re
-        });
-
-        DMatrix::from_iterator(1, self.sigma_r_basis.nrows(), main_itr)
+        let z_t = z.transpose();
+        let coords = self
+            .sigma_r_basis
+            .row_iter()
+            .zip(&self.sigma_r_basis_norms)
+            .map(|(b, &norm_sq)| {
+                let dot = z_t.dotc(&b);
+                dot.re / norm_sq
+            });
+        DMatrix::from_iterator(1, self.sigma_r_basis.nrows(), coords)
     }
 
-    // Rounds coordinates randonmly.
     pub fn coordinate_wise_random_rounding(
         &self,
         coordinates: &DMatrix<f64>,
     ) -> DMatrix<Complex64> {
-        let r = self.round_coordinates(coordinates);
+        let fractional = self.round_coordinates(coordinates);
         let mut rng_ref = self.rng.borrow_mut();
 
-        let itr = r.iter().map(|&c| {
-            let choices = [c, c - 1.0];
-            let wieghts = [1.0 - c, c];
-            rng_ref.weighted_choice(&choices, &wieghts)
+        let samples = fractional.iter().map(|&x| {
+            let choices = [0.0, -1.0];
+            let weights = [1.0 - x, x];
+            rng_ref.weighted_choice(&choices, &weights)
         });
-        let dmatrix = DMatrix::from_iterator(1, coordinates.len(), itr);
-        let rounded_coordinates = coordinates - dmatrix;
-        rounded_coordinates.map(Complex64::from)
+
+        let rounded = coordinates
+            .iter()
+            .zip(samples)
+            .map(|(&x, y)| Complex64::new(x + y, 0.0));
+
+        DMatrix::from_iterator(1, coordinates.len(), rounded)
     }
 
-    // Gives the integral rest.
     pub fn round_coordinates(&self, coordinates: &DMatrix<f64>) -> DMatrix<f64> {
-        let itr = coordinates.iter().map(|coeff| coeff - coeff.floor());
-        DMatrix::from_iterator(1, coordinates.len(), itr)
+        DMatrix::from_iterator(
+            1,
+            coordinates.len(),
+            coordinates.iter().map(|c| c - c.floor()),
+        )
     }
 
-    // sigma-inverse is a vector, b, in a polynomial using an m-th root of unity
     pub fn sigma_inverse(&self, b: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        // First we create the Vandermonde matrix
-        let a = Encoder::vandermonde(self.xi, self.n).transpose();
-        // Then we solve the system and return the resultant matrix
-        // a.lu().solve(b).expect("Linear resolution failed.")
-        a.lu().solve(b).unwrap()
+        self.vandermonde_t.clone().lu().solve(b).unwrap()
     }
 
-    // Decodes a polynomial by removing the scale,
-    // evaluating on the roots, and project it on C^(N/2)
-    //
-    // To decode a polynomial m(X) into a vector z, we evaluate the
-    // polynomial on certain values, which will be the roots of the
-    // cyclotomic polynomial ΦM(X)=X^N + 1. Those N roots are : ξ,ξ^3,...,ξ^(2N−1).
     pub fn decode(&self, p: &DMatrix<Complex64>) -> DMatrix<Complex64> {
         let rescaled_p = p.unscale(self.scale);
         let z = self.sigma(&rescaled_p);
-        
         self.pi(&z)
     }
 
-    // Projects a vector of H into C^{N/2}.
     pub fn pi(&self, z: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        z.rows(0, z.nrows() / 2).clone_owned()
+        z.rows(0, z.nrows() / 2).into_owned()
     }
 
-    // sigma a polynomial by applying it to the M-th roots of unity.
     pub fn sigma(&self, p: &DMatrix<Complex64>) -> DMatrix<Complex64> {
-        // We simply apply the polynomial on the roots
-        let poly = Encoder::to_polynomial(self, p);
-
-        let mut matrix: Vec<Complex64> = Vec::with_capacity(self.n);
-        for i in 0..self.n {
-            let i: u32 = i.try_into().expect("Couldn't convert usize to u32");
-            let root: Complex64 = self.xi.powu((2 * i) + 1);
-            // Evaluate polynomial with the given root
-            let result = poly.eval(root);
-            matrix.push(result)
-        }
-
-        // We will always return n cols x 1 row matrix;
-        DMatrix::from_row_slice(self.n, 1, &matrix)
+        let poly = self.to_polynomial(p);
+        let values = (0..self.n).map(|i| {
+            let root = self.xi.powu((2 * i as u32) + 1);
+            poly.eval(root)
+        });
+        DMatrix::from_iterator(self.n, 1, values)
     }
 
-    // Converts a matrix into a polynomial
     pub fn to_polynomial(&self, x_coeffs: &DMatrix<Complex64>) -> Polynomial<Complex64> {
-        // TODO: Figure out a way to collect these elements idomatically
-        // calling .collect() refuses to work.
-        let mut poly_vec: Vec<Complex64> = Vec::with_capacity(self.n);
-        for coeff in x_coeffs.iter() {
-            poly_vec.push(*coeff);
-        }
-        // Reverse the vec because the 'polynomials' library constructs
-        // a polynomial with the highest power to lowest power ex: 3x^3 + 2x^2 + x + 8
-        // and we need it in the form of 8 + x + 2x^2 + 3x^3
-        poly_vec.reverse();
-        
+        let poly_vec: Vec<Complex64> = x_coeffs.iter().rev().copied().collect();
         Polynomial::new(poly_vec)
     }
 
-    // Converts a polynomial into a matrix
     pub fn from_polynomial(&self, poly: &Polynomial<Complex64>) -> DMatrix<Complex64> {
-        let mut matrix: Vec<Complex64> = Vec::with_capacity(self.n);
-        for coeff in poly.terms.iter() {
-            matrix.push(*coeff);
-        }
-
-        // Reverse the vec because the 'polynomials' library constructs
-        // a polynomial with the highest power to lowest power ex: 3x^3 + 2x^2 + x + 8
-        // and we need it in the form of 8 + x + 2x^2 + 3x^3
-        matrix.reverse();
-
-        DMatrix::from_row_slice(self.n, 1, &matrix)
+        let mut coeffs = poly.terms.clone();
+        coeffs.reverse();
+        DMatrix::from_row_slice(self.n, 1, &coeffs)
     }
 }
 
