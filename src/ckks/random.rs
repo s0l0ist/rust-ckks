@@ -1,4 +1,4 @@
-use rand::distributions::WeightedIndex;
+use rand::distr::weighted::WeightedIndex;
 use rand::prelude::*;
 
 pub struct UniformRandomGenerator {
@@ -7,9 +7,7 @@ pub struct UniformRandomGenerator {
 
 impl UniformRandomGenerator {
     pub fn new() -> Self {
-        Self {
-            rng: rand::thread_rng(),
-        }
+        Self { rng: rand::rng() }
     }
 
     /// Sample choices by given weights. The greater their weights the more likely they get chosen.

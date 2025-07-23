@@ -1,35 +1,22 @@
 [package]
 name = "ckks"
 version = "0.1.0"
-authors = ["Nick Angelou <nick@morfix.io>"]
-edition = "2018"
+authors = ["Nick Angelou <angelou.nick@gmail.com>"]
+edition = "2024"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 name = "ckks"
-path = "src/lib.rs"
-crate-type = ["lib"]
-# Disable `cargo bench` from looking into lib
 bench = false
 
 [dependencies]
-# nalgebra - used for linear algebra (matrix computation)
-nalgebra = "0.29"
-# num-complex - used for complex numbers
+nalgebra = "0.33"
 num-complex = "0.4"
-# ark-poly - used to convert vectors into polynomials and evaluate them
 rustnomial = "0.3"
-# rand - used to sample random values
-rand = "0.8"
+rand = "0.9"
 
 [dev-dependencies]
-# criterion - used for benchmarking
-criterion = "0.3.5"
+criterion = "0.6"
 
 [[bench]]
 name = "ckks_benchmark"
 harness = false
-
-[profile.release]
-opt-level = 3
-lto = true

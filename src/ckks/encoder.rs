@@ -1,5 +1,5 @@
 use crate::ckks::random::UniformRandomGenerator;
-use na::DMatrix;
+use nalgebra::DMatrix;
 use num_complex::Complex64;
 use rustnomial::{Evaluable, Polynomial};
 use std::cell::RefCell;

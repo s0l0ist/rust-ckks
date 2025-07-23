@@ -1,23 +1,23 @@
-extern crate nalgebra as na;
-
 use ckks::ckks::encoder::Encoder;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use na::DMatrix;
+use core::hint::black_box;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use nalgebra::DMatrix;
 use num_complex::Complex64;
-use rand::{distributions::Standard, Rng};
+use rand::distr::StandardUniform;
+use rand::Rng;
 
 const SCALE: f64 = 64.0;
 const NUM_ELEMENTS: usize = 1024;
 
 // Generates a vector of a given size with random complex (real, im) values
 fn gen_rand_complex_vec(num_elements: usize) -> Vec<Complex64> {
-    let real = rand::thread_rng()
-        .sample_iter(Standard)
+    let real = rand::rng()
+        .sample_iter(StandardUniform)
         .take(num_elements)
         .collect::<Vec<f64>>();
 
-    let img = rand::thread_rng()
-        .sample_iter(Standard)
+    let img = rand::rng()
+        .sample_iter(StandardUniform)
         .take(num_elements)
         .collect::<Vec<f64>>();
 
